@@ -23,15 +23,36 @@ public class FrameUtil {
     //帧头第一个字节表示帧的类型，1表示传输配置文件
     //紧跟的4个字节表示正文的长度
     //前面的5个字节所有的帧都必须遵从，后面的11字节不同类型帧自己决定如何填充
-    static final int HeaderLength = 16;
-    static final int HashLength = 16;
+    public static final int HeaderLength = 16;
+    public static final int HashLength = 16;
+    public static final int DataLength = 1024;
 
-    static final byte[] retransFrame = new byte[HeaderLength];
+    public static final int FrameTypeXmlTransportConfig = 1;
+    public static final int FrameTypeRetransmit = 2;
+    public static final int FrameTypeXmlTransportConfigResponse = 3;
+    public static final int FrameTypeData = 4;
 
-    public  static byte[] makeRetransmitFrame()
-    {
-        retransFrame[0] = 1;
-        return retransFrame;
+    static final byte[] retransmitFrame = new byte[HeaderLength];
+    static final byte[] transportConfigResponseFrame = new byte[HeaderLength];
+    static final byte[] dataFrame = new byte[HeaderLength + DataLength];
+
+    static {
+        retransmitFrame[0] = 1;
+        transportConfigResponseFrame[0] = 3;
+
+        dataFrame[0] = 4;
+        byte[] lengthBytes = ByteBuffer.allocate(4).putInt(FrameTypeData).array();
+        System.arraycopy(lengthBytes, 0, dataFrame, 1, lengthBytes.length);
+    }
+
+    public static byte[] makeRetransmitFrame() {
+        return retransmitFrame;
+    }
+
+    public static byte[] makeFileTransportConfigResponseFrame(int position) {
+        byte[] positionBytes = ByteBuffer.allocate(4).putInt(position).array();
+        System.arraycopy(positionBytes, 0, transportConfigResponseFrame, 1 + 4, positionBytes.length);
+        return transportConfigResponseFrame;
     }
 
     public static byte[] makeFileTransportConfigFrame(String filePath) throws NoSuchAlgorithmException, IOException {
@@ -61,6 +82,13 @@ public class FrameUtil {
         return frame;
     }
 
+    public static int byteArrayToInt(byte[] b, int start) {
+        return b[start + 3] & 0xFF |
+                (b[start + 2] & 0xFF) << 8 |
+                (b[start + 1] & 0xFF) << 16 |
+                (b[start + 0] & 0xFF) << 24;
+    }
+
     static Document fromConfigToXml(FileTransportConfig config) {
         Document doc = DocumentHelper.createDocument();
         Element root = doc.addElement("root");
@@ -84,11 +112,11 @@ public class FrameUtil {
         result.fileName = fileElement.attribute("name").getValue();
         result.fileSize = Integer.parseInt(fileElement.attribute("size").getValue());
 
-        for (Iterator i = root.element("chunks").elementIterator( "chunk" ); i.hasNext(); ) {
+        for (Iterator i = root.element("chunks").elementIterator("chunk"); i.hasNext(); ) {
             Element chunkElement = (Element) i.next();
             int ordinalNum = Integer.parseInt(chunkElement.attribute("ordinalNum").getValue());
             String md5Hash = chunkElement.attribute("md5Hash").getValue();
-            result.chunks.add(new Chunk(ordinalNum,md5Hash));
+            result.chunks.add(new Chunk(ordinalNum, md5Hash));
         }
 
         return result;
