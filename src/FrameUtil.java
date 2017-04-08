@@ -1,4 +1,5 @@
 import org.dom4j.Document;
+import org.dom4j.DocumentException;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
 
@@ -12,11 +13,16 @@ import java.nio.file.Paths;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Iterator;
 
 /**
  * Created by Administrator on 2017/4/8.
  */
 public class FrameUtil {
+    //帧头长度固定为16字节
+    //帧头第一个字节表示帧的类型，1表示传输配置文件
+    //紧跟的4个字节表示正文的长度
+    //前面的5个字节所有的帧都必须遵从，后面的11字节不同类型帧自己决定如何填充
     static final int HeaderLength = 16;
     static final int HashLength = 16;
 
@@ -24,9 +30,7 @@ public class FrameUtil {
         FileTransportConfig config = generateTransportConfig(filePath);
         Document doc = fromConfigToXml(config);
 
-        //帧头第一个字节表示帧的类型
-        //紧跟的4个字节表示正文的长度
-        //前面的5个字节所有的帧都必须遵从，后面的11字节不同类型帧自己决定如何填充
+
         //紧跟的4个字节表示配置文件字节流的长度
         byte[] configFileBytes = doc.asXML().getBytes(StandardCharsets.UTF_8);
         byte[] header = new byte[HeaderLength];
@@ -61,6 +65,24 @@ public class FrameUtil {
                     .addAttribute("md5Hash", c.md5Hash);
         }
         return doc;
+    }
+
+    static FileTransportConfig ParseFileTransportConfigXml(String xml) throws DocumentException {
+        Document document = DocumentHelper.parseText(xml);
+        FileTransportConfig result = new FileTransportConfig();
+        Element root = document.getRootElement();
+        Element fileElement = root.element("file");
+        result.fileName = fileElement.attribute("name").getValue();
+        result.fileSize = Integer.parseInt(fileElement.attribute("size").getValue());
+
+        for (Iterator i = root.element("chunks").elementIterator( "chunk" ); i.hasNext(); ) {
+            Element chunkElement = (Element) i.next();
+            int ordinalNum = Integer.parseInt(chunkElement.attribute("ordinalNum").getValue());
+            String md5Hash = chunkElement.attribute("md5Hash").getValue();
+            result.chunks.add(new Chunk(ordinalNum,md5Hash));
+        }
+
+        return result;
     }
 
     static FileTransportConfig generateTransportConfig(String filePath) throws IOException, NoSuchAlgorithmException {

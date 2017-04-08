@@ -1,39 +1,49 @@
 import org.dom4j.Document;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
+import org.dom4j.DocumentException;
+
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Iterator;
 
 
 public class Main {
 
     public static void main(String[] args) {
-        byte[] bytes = new byte[16];
-        try {
-            FrameUtil.makeFileTransportConfigFrame("d://initrd.lz");
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+//        byte[] bytes = new byte[16];
+//        try {
+//            FrameUtil.makeFileTransportConfigFrame("d://initrd.lz");
+//        } catch (NoSuchAlgorithmException e) {
+//            e.printStackTrace();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+
+//        FileTransportConfig config = new FileTransportConfig();
+//        config.fileSize = 2000;
+//        config.fileName = "lincoln.txt";
+//        config.chunks.add(new Chunk(0, "9092002"));
+//        config.chunks.add(new Chunk(1, "89039302"));
+//        Document doc = FrameUtil.fromConfigToXml(config);
+//
+//        try {
+//            FrameUtil.ParseFileTransportConfigXml(doc.asXML());
+//        } catch (DocumentException e) {
+//            e.printStackTrace();
+//        }
+
         //printFileNameAndFileSize();
-    //        FileTransportConfig config = generateTransportConfig("d://initrd.lz");
-    //        Document doc = fromConfigToXml(config);
+        //        FileTransportConfig config = generateTransportConfig("d://initrd.lz");
+        //        Document doc = fromConfigToXml(config);
 //        System.out.println(doc.asXML());
         //calcFileMd5();
         System.out.println("Hello World!");
     }
-
-
-
-
-
-
-
 
 
     static String calcFileMd5(String filePath) {
