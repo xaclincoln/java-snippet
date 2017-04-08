@@ -1,7 +1,6 @@
 import org.dom4j.Document;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
-import org.dom4j.DocumentException;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -9,7 +8,6 @@ import java.nio.file.Paths;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Iterator;
 
 
 public class Main {
@@ -37,12 +35,28 @@ public class Main {
 //            e.printStackTrace();
 //        }
 
+        try {
+            FileTransportClient client = new FileTransportClient("127.0.0.1",9000);
+            client.Connect();
+            client.SendFileTransportXmlConfig("d://initrd.lz");
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+
         //printFileNameAndFileSize();
         //        FileTransportConfig config = generateTransportConfig("d://initrd.lz");
         //        Document doc = fromConfigToXml(config);
 //        System.out.println(doc.asXML());
         //calcFileMd5();
         System.out.println("Hello World!");
+        try {
+            System.in.read();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
 

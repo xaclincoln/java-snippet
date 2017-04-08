@@ -26,6 +26,14 @@ public class FrameUtil {
     static final int HeaderLength = 16;
     static final int HashLength = 16;
 
+    static final byte[] retransFrame = new byte[HeaderLength];
+
+    public  static byte[] makeRetransmitFrame()
+    {
+        retransFrame[0] = 1;
+        return retransFrame;
+    }
+
     public static byte[] makeFileTransportConfigFrame(String filePath) throws NoSuchAlgorithmException, IOException {
         FileTransportConfig config = generateTransportConfig(filePath);
         Document doc = fromConfigToXml(config);
@@ -47,6 +55,7 @@ public class FrameUtil {
         MessageDigest md = MessageDigest.getInstance("md5");
         md.update(frame, 0, frame.length - HashLength);
         byte[] md5Hash = md.digest();
+        System.out.println(javax.xml.bind.DatatypeConverter.printHexBinary(md5Hash));
         System.arraycopy(md5Hash, 0, frame, header.length + configFileBytes.length, md5Hash.length);
 
         return frame;
