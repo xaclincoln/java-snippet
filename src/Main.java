@@ -1,11 +1,7 @@
 import org.dom4j.Document;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
-
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.DigestInputStream;
@@ -16,15 +12,34 @@ import java.security.NoSuchAlgorithmException;
 public class Main {
 
     public static void main(String[] args) {
-        //GetFileSize();
-        calcFileMd5();
+        byte[] bytes = new byte[16];
+        try {
+            FrameUtil.makeFileTransportConfigFrame("d://initrd.lz");
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        //printFileNameAndFileSize();
+    //        FileTransportConfig config = generateTransportConfig("d://initrd.lz");
+    //        Document doc = fromConfigToXml(config);
+//        System.out.println(doc.asXML());
+        //calcFileMd5();
         System.out.println("Hello World!");
     }
 
-    static void calcFileMd5() {
+
+
+
+
+
+
+
+
+    static String calcFileMd5(String filePath) {
         try {
             MessageDigest md = MessageDigest.getInstance("md5");
-            InputStream is = Files.newInputStream(Paths.get("authors.xml"));
+            InputStream is = Files.newInputStream(Paths.get(filePath));
 
             DigestInputStream dis = new DigestInputStream(is, md);
             byte[] bytes = new byte[1024];
@@ -34,18 +49,19 @@ public class Main {
                     break;
                 }
             }
-            System.out.println(javax.xml.bind.DatatypeConverter.printHexBinary(md.digest()));
+            return javax.xml.bind.DatatypeConverter.printHexBinary(md.digest());
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         } catch (IOException e) {
             e.printStackTrace();
         }
-
+        return null;
     }
 
-    static void GetFileSize() {
-        File f = new File("authors.xml");
+    static void printFileNameAndFileSize() {
+        File f = new File("./.idea/compiler.xml");
         System.out.println(f.length());
+        System.out.println(f.getName());
     }
 
     static void WriteXmlToFile() {
