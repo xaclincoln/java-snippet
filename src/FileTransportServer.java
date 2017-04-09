@@ -38,36 +38,23 @@ public class FileTransportServer {
             try {
                 Socket client = _sock.accept();
                 InputStream reader = client.getInputStream();
-                byte[] header = new byte[16];
-                int count = reader.read(header, 0, header.length);
-                if (count == -1) {
-                    return;
-                }
-                if (header[0] == FrameUtil.FrameTypeXmlTransportConfig) {
-                    int bodyLength = FrameUtil.byteArrayToInt(header, 1);
-                    byte[] body = new byte[bodyLength];
-                    reader.read(body, 0, bodyLength);
-                    int xmlConfigLength = FrameUtil.byteArrayToInt(header, 5);
-                    MessageDigest md5 = MessageDigest.getInstance("md5");
-                    md5.update(header);
-                    md5.update(body, 0, xmlConfigLength);
-                    byte[] md5Hash = md5.digest();
-                    OutputStream writer = client.getOutputStream();
-                    if (md5.isEqual(md5Hash, Arrays.copyOfRange(body, xmlConfigLength, body.length))) {
-                        String xmlString = new String(body, 0, xmlConfigLength, "UTF-8");
-                        FileTransportConfig config = FrameUtil.ParseFileTransportConfigXml(xmlString);
-                        //判断文件是否已经存在，如果存在，告诉续传的位置
-                        //这里暂不考虑续传问题
-                        saveFileTransportConfig(xmlString, config.fileName);
-                        writer.write(FrameUtil.makeFileTransportConfigResponseFrame(0));
+                OutputStream writer = client.getOutputStream();
 
-                        //开始接收数据
+                //首先接收文件传输的XML配置文件
+                byte[] response = getResponse(reader);
+                boolean valid = validate(response);
+                if (valid && response[0] == FrameUtil.FrameTypeXmlTransportConfig) {
+                    int xmlConfigLength = FrameUtil.byteArrayToInt(response, 5);
+                    String xmlString = new String(response, FrameUtil.HeaderLength, xmlConfigLength, "UTF-8");
+                    FileTransportConfig config = FrameUtil.ParseFileTransportConfigXml(xmlString);
+                    //判断文件是否已经存在，如果存在，告诉续传的位置
+                    //这里暂不考虑续传问题
+                    saveFileTransportConfig(xmlString, config.fileName);
+                    writer.write(FrameUtil.makeFileTransportConfigResponseFrame(0));
 
-                    } else {
-                        writer.write(FrameUtil.makeRetransmitFrame());
-                    }
-
-
+                    //开始接收数据
+                } else {
+                    writer.write(FrameUtil.makeRetransmitFrame());
                 }
             } catch (IOException ex) {
 
@@ -75,6 +62,29 @@ public class FileTransportServer {
             } catch (DocumentException ex) {
             }
 
+        }
+
+    }
+
+    boolean validate(byte[] frame) throws NoSuchAlgorithmException {
+        int xmlConfigLength = FrameUtil.byteArrayToInt(frame, 5);
+        MessageDigest md5 = MessageDigest.getInstance("md5");
+        md5.update(frame, 0, xmlConfigLength + FrameUtil.HeaderLength);
+        byte[] md5Hash = md5.digest();
+        return md5.isEqual(md5Hash, Arrays.copyOfRange(frame, xmlConfigLength + FrameUtil.HeaderLength, frame.length));
+    }
+
+    byte[] getResponse(InputStream reader) throws IOException {
+        byte[] header = new byte[FrameUtil.HeaderLength];
+        reader.read(header, 0, header.length);
+        int bodyLength = FrameUtil.byteArrayToInt(header, 1);
+        if (bodyLength != 0) {
+            byte[] result = new byte[header.length + bodyLength];
+            reader.read(result, header.length, bodyLength);
+            System.arraycopy(header, 0, result, 0, header.length);
+            return result;
+        } else {
+            return header;
         }
     }
 
