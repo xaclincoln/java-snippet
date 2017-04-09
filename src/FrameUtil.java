@@ -26,40 +26,43 @@ public class FrameUtil {
     public static final int HeaderLength = 16;
     public static final int HashLength = 16;
     public static final int DataLength = 1024;
+    public static final long chunkSize = 10 * 1024 * 1024;
 
     public static final int FrameTypeXmlTransportConfig = 1;
     public static final int FrameTypeRetransmit = 2;
     public static final int FrameTypeXmlTransportConfigResponse = 3;
     public static final int FrameTypeData = 4;
+    public static final int FrameTypeChunkValidation = 5;
 
     static final byte[] retransmitFrame = new byte[HeaderLength];
-    static final byte[] transportConfigResponseFrame = new byte[HeaderLength];
-    static final byte[] dataFrame = new byte[HeaderLength + DataLength];
 
     static {
         retransmitFrame[0] = 1;
-        transportConfigResponseFrame[0] = 3;
+    }
 
+    public static byte[] makeDataFrame() {
+        byte[] dataFrame = new byte[HeaderLength + DataLength];
+        //数据帧的长度固定，因此在头部直接指定，这样便于接收
         dataFrame[0] = 4;
         byte[] lengthBytes = ByteBuffer.allocate(4).putInt(FrameTypeData).array();
         System.arraycopy(lengthBytes, 0, dataFrame, 1, lengthBytes.length);
+        return dataFrame;
     }
 
     public static byte[] makeRetransmitFrame() {
         return retransmitFrame;
     }
 
-    public static byte[] makeFileTransportConfigResponseFrame(int position) {
-        byte[] positionBytes = ByteBuffer.allocate(4).putInt(position).array();
+    public static byte[] makeFileTransportConfigResponseFrame(long position) {
+        byte[] transportConfigResponseFrame = new byte[HeaderLength];
+        transportConfigResponseFrame[0] = 3;
+        byte[] positionBytes = ByteBuffer.allocate(8).putLong(position).array();
         System.arraycopy(positionBytes, 0, transportConfigResponseFrame, 1 + 4, positionBytes.length);
         return transportConfigResponseFrame;
     }
 
-    public static byte[] makeFileTransportConfigFrame(String filePath) throws NoSuchAlgorithmException, IOException {
-        FileTransportConfig config = generateTransportConfig(filePath);
+    public static byte[] makeFileTransportConfigFrame(FileTransportConfig config) throws NoSuchAlgorithmException, IOException {
         Document doc = fromConfigToXml(config);
-
-
         //紧跟的4个字节表示配置文件字节流的长度
         byte[] configFileBytes = doc.asXML().getBytes(StandardCharsets.UTF_8);
         byte[] header = new byte[HeaderLength];
@@ -87,6 +90,17 @@ public class FrameUtil {
                 (b[start + 2] & 0xFF) << 8 |
                 (b[start + 1] & 0xFF) << 16 |
                 (b[start + 0] & 0xFF) << 24;
+    }
+
+    public static int byteArrayToLong(byte[] b, int start) {
+        return b[start + 7] & 0xFF |
+                (b[start + 6] & 0xFF) << 8 |
+                (b[start + 5] & 0xFF) << 16 |
+                (b[start + 4] & 0xFF) << 24 |
+                (b[start + 3] & 0xFF) << 32 |
+                (b[start + 2] & 0xFF) << 40 |
+                (b[start + 1] & 0xFF) << 48 |
+                (b[start + 0] & 0xFF) << 56;
     }
 
     static Document fromConfigToXml(FileTransportConfig config) {
@@ -123,7 +137,7 @@ public class FrameUtil {
     }
 
     static FileTransportConfig generateTransportConfig(String filePath) throws IOException, NoSuchAlgorithmException {
-        final long chunkSize = 10 * 1024 * 1024;
+
         FileTransportConfig config = new FileTransportConfig();
         File f = new File(filePath);
         config.fileName = f.getName();
@@ -166,6 +180,7 @@ public class FrameUtil {
                 break;
             }
         }
+        is.close();
         return javax.xml.bind.DatatypeConverter.printHexBinary(md.digest());
 
     }

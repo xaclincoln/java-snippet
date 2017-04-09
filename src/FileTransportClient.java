@@ -3,6 +3,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.NoSuchAlgorithmException;
 
 /**
@@ -27,19 +29,70 @@ public class FileTransportClient {
     void SendFileTransportXmlConfig(String filePath) throws IOException, NoSuchAlgorithmException {
         OutputStream writer = _sock.getOutputStream();
         InputStream reader = _sock.getInputStream();
-        byte[] frame = FrameUtil.makeFileTransportConfigFrame(filePath);
-        byte[] response = repeatSendXmlConfigFrame(writer, reader, frame);
+        FileTransportConfig config = FrameUtil.generateTransportConfig(filePath);
+        byte[] frame = FrameUtil.makeFileTransportConfigFrame(config);
+
+        byte[] response = repeatSendingXmlConfigFrameIfValidationFailed(writer, reader, frame);
         if (response[0] == FrameUtil.FrameTypeXmlTransportConfigResponse) {
-            //这里分为两种情况，文件不存在，从头开始传输，文件已存在，进行续传
-            int startPosition = FrameUtil.byteArrayToInt(response, 5);
-            System.out.println("config response received, start position: " + startPosition);
+            long startPosition = FrameUtil.byteArrayToLong(response, 5);
+            int startChunkOrdinalNum = determineChunkBelonging(startPosition);
+            for (int i = startChunkOrdinalNum; i < config.chunks.size(); ++i) {
+                long endPosition = startPosition + FrameUtil.chunkSize - 1;
+                repeatSendingChunkIfValidationFailed(writer,reader,filePath,startPosition,endPosition);
+                startPosition = endPosition + 1;
+            }
         } else {
 
         }
 
     }
 
-    byte[] repeatSendXmlConfigFrame(OutputStream writer, InputStream reader, byte[] frame) throws IOException {
+    void repeatSendingChunkIfValidationFailed(OutputStream writer,
+                                              InputStream reader,
+                                              String filePath,
+                                              long startPosition,
+                                              long endPositionInclusive) throws IOException {
+        do {
+            sendChunk(writer, filePath, startPosition, endPositionInclusive);
+            byte[] response = getResponse(reader);
+            if (response[0] == FrameUtil.FrameTypeChunkValidation) {
+                //验证帧的第5个字节大于0时表示成功
+                if(response[5] > 0){
+                    return;
+                }
+            } else {
+
+            }
+        }while(true);
+    }
+
+    void sendChunk(OutputStream writer, String filePath, long startPosition, long endPositionInclusive) throws IOException {
+        byte[] frame = FrameUtil.makeDataFrame();
+        InputStream reader = Files.newInputStream(Paths.get(filePath));
+        reader.skip(startPosition);
+
+        int totalCount = 0;
+        while (true) {
+            long toRead = (endPositionInclusive - startPosition + 1) - totalCount;
+            if (toRead > FrameUtil.DataLength) {
+                toRead = FrameUtil.DataLength;
+            }
+            int count = reader.read(frame, FrameUtil.HeaderLength, (int) toRead);
+            writer.write(frame, 0, frame.length);
+            totalCount += count;
+            if (count < toRead || totalCount == endPositionInclusive - startPosition + 1) {
+                break;
+            }
+        }
+        reader.close();
+    }
+
+    int determineChunkBelonging(long startPosition) {
+        return (int) (startPosition / FrameUtil.chunkSize);
+    }
+
+
+    byte[] repeatSendingXmlConfigFrameIfValidationFailed(OutputStream writer, InputStream reader, byte[] frame) throws IOException {
         while (true) {
             writer.write(frame, 0, frame.length);
             byte[] response = getResponse(reader);
