@@ -4,7 +4,6 @@ import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -52,13 +51,13 @@ public class FileTransportServer {
                     int xmlConfigLength = FrameUtil.byteArrayToInt(response, 5);
                     String xmlString = new String(response, FrameUtil.HeaderLength, xmlConfigLength, "UTF-8");
                     FileTransportConfig config = FrameUtil.ParseFileTransportConfigXml(xmlString);
-                    saveFileTransportConfig(xmlString, config.fileName);
+                    //saveFileTransportConfig(xmlString, config.fileName);
                     //应答客户端文件续传的位置
                     int resumedChunkNum = getResumedTransferChunkNum(config.fileName);
                     byte[] responseFrame = FrameUtil.makeFileTransportConfigResponseFrame(resumedChunkNum * FrameUtil.ChunkSize);
                     writer.write(responseFrame);
                     createReceiveFileIfNotExisted(config.fileName);
-                    receiveChunks(reader,writer,config,resumedChunkNum);
+                    receiveChunks(reader, writer, config, resumedChunkNum);
                 } else {
                     writer.write(FrameUtil.makeRetransmitFrame());
                 }
@@ -79,7 +78,7 @@ public class FileTransportServer {
             //如果成功接收块，把块追加上主文件
             //如果出现任何不满足协议的帧，则断开和客户端的连接
             if (!result) {
-                appendChunkToMainFile(config.fileName,i);
+                appendChunkToMainFile(config.fileName, i);
             } else {
                 reader.close();
                 writer.close();
@@ -91,7 +90,7 @@ public class FileTransportServer {
     void appendChunkToMainFile(String mainFileName, int chunkOrdinalNum) throws IOException {
         try {
             DataOutputStream out = new DataOutputStream(new FileOutputStream(receivePath + mainFileName, true));
-            InputStream in = new FileInputStream(getChunkFilePath(mainFileName,chunkOrdinalNum));
+            InputStream in = new FileInputStream(getChunkFilePath(mainFileName, chunkOrdinalNum));
             byte[] buffer = new byte[1024];
             int len;
             while ((len = in.read(buffer)) != -1) {
@@ -117,6 +116,7 @@ public class FileTransportServer {
     boolean repeatReceiveChunkIfValidationFailed(InputStream reader, OutputStream writer, String fileName, Chunk c)
             throws IOException, NoSuchAlgorithmException {
         while (true) {
+            //如果出现Md5验证不通过，则重新传
             File chunk = new File(getChunkFilePath(fileName, c.ordinalNum));
             DataOutputStream fileWriter = new DataOutputStream(new FileOutputStream(chunk, false));
             ChunkReceiveState state = receiveChunk(reader, writer, fileWriter, c);
@@ -124,7 +124,10 @@ public class FileTransportServer {
                 return true;
             } else if (state == ChunkReceiveState.IllegalFrame) {
                 return false;
-            } else {
+            } else if(state == ChunkReceiveState.ClientDisconnected){
+                return false;
+            }else {
+                //如果验证不通过，则重新接收
                 continue;
             }
         }
@@ -134,17 +137,21 @@ public class FileTransportServer {
         Succeed,
         NeedRetransmit,
         IllegalFrame,
+        ClientDisconnected,
     }
 
     ChunkReceiveState receiveChunk(InputStream reader, OutputStream writer, OutputStream fileWriter, Chunk c)
             throws IOException, NoSuchAlgorithmException {
-        byte[] bytes = new byte[FrameUtil.DataLength + FrameUtil.HashLength];
+        byte[] bytes = new byte[FrameUtil.DataLength + FrameUtil.HeaderLength];
         MessageDigest md5 = MessageDigest.getInstance("md5");
         while (true) {
-            int count = reader.read(bytes, FrameUtil.HeaderLength, bytes.length);
+            int count = reader.read(bytes, 0, bytes.length);
+            if(count <= 0){
+                return ChunkReceiveState.ClientDisconnected;
+            }
             if (bytes[0] == FrameUtil.FrameTypeData) {
                 md5.update(bytes, FrameUtil.HeaderLength, count);
-                fileWriter.write(bytes, FrameUtil.HashLength, count);
+                fileWriter.write(bytes, FrameUtil.HeaderLength, count);
             } else if (bytes[0] == FrameUtil.FrameTypeChunkValidationRequest) {
                 byte[] hash = md5.digest();
                 boolean needRetransmit = !DatatypeConverter.printHexBinary(hash).equalsIgnoreCase(c.md5Hash);

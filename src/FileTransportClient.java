@@ -122,7 +122,7 @@ public class FileTransportClient {
         try {
             FileTransportClient client = new FileTransportClient("127.0.0.1", 9000);
             client.Connect();
-            client.SendFileTransportXmlConfig("d://initrd.lz");
+            client.SendFileTransportXmlConfig("D:\\Downloads\\Git-2.12.2.2-64-bit.exe");
 
         } catch (IOException e) {
             e.printStackTrace();
