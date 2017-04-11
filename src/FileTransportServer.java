@@ -1,11 +1,18 @@
 import org.dom4j.DocumentException;
+
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+
+import javax.xml.bind.DatatypeConverter;
 
 /**
  * Created by Administrator on 2017/4/8.
@@ -15,6 +22,7 @@ public class FileTransportServer {
     private int _port;
     private ServerSocket _sock;
     private final String receivePath = "./接收/";
+
 
     FileTransportServer(String ip, int port) {
         _ip = ip;
@@ -44,12 +52,13 @@ public class FileTransportServer {
                     int xmlConfigLength = FrameUtil.byteArrayToInt(response, 5);
                     String xmlString = new String(response, FrameUtil.HeaderLength, xmlConfigLength, "UTF-8");
                     FileTransportConfig config = FrameUtil.ParseFileTransportConfigXml(xmlString);
-                    //判断文件是否已经存在，如果存在，告诉续传的位置
-                    //这里暂不考虑续传问题
                     saveFileTransportConfig(xmlString, config.fileName);
-                    writer.write(FrameUtil.makeFileTransportConfigResponseFrame(0));
-
-                    //开始接收数据
+                    //应答客户端文件续传的位置
+                    int resumedChunkNum = getResumedTransferChunkNum(config.fileName);
+                    byte[] responseFrame = FrameUtil.makeFileTransportConfigResponseFrame(resumedChunkNum * FrameUtil.ChunkSize);
+                    writer.write(responseFrame);
+                    createReceiveFileIfNotExisted(config.fileName);
+                    receiveChunks(reader,writer,config,resumedChunkNum);
                 } else {
                     writer.write(FrameUtil.makeRetransmitFrame());
                 }
@@ -60,6 +69,127 @@ public class FileTransportServer {
             }
 
         }
+
+    }
+
+    void receiveChunks(InputStream reader, OutputStream writer, FileTransportConfig config, int startChunk)
+            throws IOException, NoSuchAlgorithmException {
+        for (int i = startChunk; i < config.chunks.size(); i++) {
+            boolean result = repeatReceiveChunkIfValidationFailed(reader, writer, config.fileName, config.chunks.get(i));
+            //如果成功接收块，把块追加上主文件
+            //如果出现任何不满足协议的帧，则断开和客户端的连接
+            if (!result) {
+                appendChunkToMainFile(config.fileName,i);
+            } else {
+                reader.close();
+                writer.close();
+                break;
+            }
+        }
+    }
+
+    void appendChunkToMainFile(String mainFileName, int chunkOrdinalNum) throws IOException {
+        try {
+            DataOutputStream out = new DataOutputStream(new FileOutputStream(receivePath + mainFileName, true));
+            InputStream in = new FileInputStream(getChunkFilePath(mainFileName,chunkOrdinalNum));
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = in.read(buffer)) != -1) {
+                out.write(buffer, 0, len);
+            }
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    void createReceiveFileIfNotExisted(String fileName) throws IOException {
+        File target = new File(receivePath + fileName);
+        if (!target.exists()) {
+            target.createNewFile();
+        }
+    }
+
+    String getChunkFilePath(String fileName, int chunkOrdinalNum) {
+        return receivePath + fileName + ".chunk" + String.format("%04d", chunkOrdinalNum);
+    }
+
+    boolean repeatReceiveChunkIfValidationFailed(InputStream reader, OutputStream writer, String fileName, Chunk c)
+            throws IOException, NoSuchAlgorithmException {
+        while (true) {
+            File chunk = new File(getChunkFilePath(fileName, c.ordinalNum));
+            DataOutputStream fileWriter = new DataOutputStream(new FileOutputStream(chunk, false));
+            ChunkReceiveState state = receiveChunk(reader, writer, fileWriter, c);
+            if (state == ChunkReceiveState.Succeed) {
+                return true;
+            } else if (state == ChunkReceiveState.IllegalFrame) {
+                return false;
+            } else {
+                continue;
+            }
+        }
+    }
+
+    enum ChunkReceiveState {
+        Succeed,
+        NeedRetransmit,
+        IllegalFrame,
+    }
+
+    ChunkReceiveState receiveChunk(InputStream reader, OutputStream writer, OutputStream fileWriter, Chunk c)
+            throws IOException, NoSuchAlgorithmException {
+        byte[] bytes = new byte[FrameUtil.DataLength + FrameUtil.HashLength];
+        MessageDigest md5 = MessageDigest.getInstance("md5");
+        while (true) {
+            int count = reader.read(bytes, FrameUtil.HeaderLength, bytes.length);
+            if (bytes[0] == FrameUtil.FrameTypeData) {
+                md5.update(bytes, FrameUtil.HeaderLength, count);
+                fileWriter.write(bytes, FrameUtil.HashLength, count);
+            } else if (bytes[0] == FrameUtil.FrameTypeChunkValidationRequest) {
+                byte[] hash = md5.digest();
+                boolean needRetransmit = !DatatypeConverter.printHexBinary(hash).equalsIgnoreCase(c.md5Hash);
+                writer.write(FrameUtil.makeChunkValidationResponseFrame(needRetransmit));
+                return needRetransmit ? ChunkReceiveState.NeedRetransmit : ChunkReceiveState.Succeed;
+            } else {
+                return ChunkReceiveState.IllegalFrame;
+            }
+        }
+    }
+
+    class ResumedTransferState {
+
+    }
+
+    int getResumedTransferChunkNum(String fileName) throws IOException {
+        File targetFile = new File(receivePath + fileName);
+        if (!targetFile.exists()) {
+            return 0;
+        }
+        long size = targetFile.length();
+        //块的命名规则为 "{fileName}.chunk{序号}"
+        //查找文件同名的最后一个块，获取其大小
+        File recvDir = new File(receivePath);
+        File[] chunks = recvDir.listFiles(new FilenameFilter() {
+            @Override
+            public boolean accept(File dir, String name) {
+                return name.startsWith(fileName + ".chunk");
+            }
+        });
+
+        if (chunks.length == 1) {
+            return 0;
+        }
+
+        //重传时，如果某个块没有传输完全，则从头重传此块
+        List chunkList = Arrays.asList(chunks);
+        File lastChunk = Collections.max(chunkList, new Comparator<File>() {
+            @Override
+            public int compare(File o1, File o2) {
+                return o1.getName().compareTo(o2.getName());
+            }
+        });
+        String lastChunkFileName = lastChunk.getName();
+        return Integer.parseInt(lastChunkFileName.substring(lastChunkFileName.length() - 4, lastChunkFileName.length()));
 
     }
 

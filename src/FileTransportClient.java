@@ -37,8 +37,8 @@ public class FileTransportClient {
             long startPosition = FrameUtil.byteArrayToLong(response, 5);
             int startChunkOrdinalNum = determineChunkBelonging(startPosition);
             for (int i = startChunkOrdinalNum; i < config.chunks.size(); ++i) {
-                long endPosition = startPosition + FrameUtil.chunkSize - 1;
-                repeatSendingChunkIfValidationFailed(writer,reader,filePath,startPosition,endPosition);
+                long endPosition = startPosition + FrameUtil.ChunkSize - 1;
+                repeatSendingChunkIfValidationFailed(writer, reader, filePath, startPosition, endPosition);
                 startPosition = endPosition + 1;
             }
         } else {
@@ -55,15 +55,15 @@ public class FileTransportClient {
         do {
             sendChunk(writer, filePath, startPosition, endPositionInclusive);
             byte[] response = getResponse(reader);
-            if (response[0] == FrameUtil.FrameTypeChunkValidation) {
+            if (response[0] == FrameUtil.FrameTypeChunkValidationRequest) {
                 //验证帧的第5个字节大于0时表示成功
-                if(response[5] > 0){
+                if (response[5] > 0) {
                     return;
                 }
             } else {
 
             }
-        }while(true);
+        } while (true);
     }
 
     void sendChunk(OutputStream writer, String filePath, long startPosition, long endPositionInclusive) throws IOException {
@@ -88,7 +88,7 @@ public class FileTransportClient {
     }
 
     int determineChunkBelonging(long startPosition) {
-        return (int) (startPosition / FrameUtil.chunkSize);
+        return (int) (startPosition / FrameUtil.ChunkSize);
     }
 
 
@@ -115,6 +115,27 @@ public class FileTransportClient {
             return result;
         } else {
             return header;
+        }
+    }
+
+    public static void main(String[] args) {
+        try {
+            FileTransportClient client = new FileTransportClient("127.0.0.1", 9000);
+            client.Connect();
+            client.SendFileTransportXmlConfig("d://initrd.lz");
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+
+
+        System.out.println("Hello World!");
+        try {
+            System.in.read();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 

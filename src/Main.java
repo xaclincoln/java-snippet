@@ -36,27 +36,29 @@ public class Main {
 //        }
 
         try {
-            FileTransportClient client = new FileTransportClient("127.0.0.1",9000);
-            client.Connect();
-            client.SendFileTransportXmlConfig("d://initrd.lz");
-
+            OutputStream file =  new FileOutputStream("linc.dat", false);
+            file.write(500);
+            file.flush();
+            file.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
         } catch (IOException e) {
             e.printStackTrace();
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
         }
+
+//        String lastChunkFileName = "abc.chunk0004";
+//        System.out.println(
+//                Integer.parseInt(lastChunkFileName.substring(lastChunkFileName.length() - 4, lastChunkFileName.length()))
+//        );
+
+        //System.out.println(String.format("%04d ",30));
 
         //printFileNameAndFileSize();
         //        FileTransportConfig config = generateTransportConfig("d://initrd.lz");
         //        Document doc = fromConfigToXml(config);
 //        System.out.println(doc.asXML());
         //calcFileMd5();
-        System.out.println("Hello World!");
-        try {
-            System.in.read();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+
     }
 
 

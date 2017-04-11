@@ -26,18 +26,25 @@ public class FrameUtil {
     public static final int HeaderLength = 16;
     public static final int HashLength = 16;
     public static final int DataLength = 1024;
-    public static final long chunkSize = 10 * 1024 * 1024;
+    public static final long ChunkSize = 10 * 1024 * 1024;
 
     public static final int FrameTypeXmlTransportConfig = 1;
     public static final int FrameTypeRetransmit = 2;
     public static final int FrameTypeXmlTransportConfigResponse = 3;
     public static final int FrameTypeData = 4;
-    public static final int FrameTypeChunkValidation = 5;
+    public static final int FrameTypeChunkValidationRequest = 5;
+    public static final int FrameTypeChunkValidationResponse = 6;
 
     static final byte[] retransmitFrame = new byte[HeaderLength];
 
     static {
         retransmitFrame[0] = 1;
+    }
+
+    public static byte[] makeChunkValidationResponseFrame(boolean needRetransmit) {
+        byte[] frame = new byte[HeaderLength];
+        frame[1 + 4] = needRetransmit ? (byte)1 : 0;;
+        return frame;
     }
 
     public static byte[] makeDataFrame() {
@@ -144,16 +151,16 @@ public class FrameUtil {
         config.fileSize = f.length();
         //config.md5Hash = calcFileMd5(filePath);
 
-        long chunkCount = config.fileSize / chunkSize;
+        long chunkCount = config.fileSize / ChunkSize;
         if (chunkCount == 0) {
             config.chunks.add(new Chunk(0, config.md5Hash));
         } else {
             for (int i = 0; i < chunkCount; i++) {
-                long startPosition = i * chunkSize;
-                config.chunks.add(new Chunk(i, calcFileMd5(filePath, startPosition, startPosition + chunkSize - 1)));
+                long startPosition = i * ChunkSize;
+                config.chunks.add(new Chunk(i, calcFileMd5(filePath, startPosition, startPosition + ChunkSize - 1)));
             }
-            if (config.fileSize - chunkCount * chunkSize > 0) {
-                config.chunks.add(new Chunk((int) chunkCount + 1, calcFileMd5(filePath, chunkCount * chunkSize, config.fileSize - 1)));
+            if (config.fileSize - chunkCount * ChunkSize > 0) {
+                config.chunks.add(new Chunk((int) chunkCount + 1, calcFileMd5(filePath, chunkCount * ChunkSize, config.fileSize - 1)));
             }
         }
 
