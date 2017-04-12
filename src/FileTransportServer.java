@@ -51,7 +51,7 @@ public class FileTransportServer {
                     int xmlConfigLength = FrameUtil.byteArrayToInt(response, 5);
                     String xmlString = new String(response, FrameUtil.HeaderLength, xmlConfigLength, "UTF-8");
                     FileTransportConfig config = FrameUtil.ParseFileTransportConfigXml(xmlString);
-                    //saveFileTransportConfig(xmlString, config.fileName);
+                    saveFileTransportConfig(xmlString, config.fileName);
                     //应答客户端文件续传的位置
                     int resumedChunkNum = getResumedTransferChunkNum(config.fileName);
                     byte[] responseFrame = FrameUtil.makeFileTransportConfigResponseFrame(resumedChunkNum * FrameUtil.ChunkSize);
@@ -61,10 +61,22 @@ public class FileTransportServer {
                 } else {
                     writer.write(FrameUtil.makeRetransmitFrame());
                 }
+
+                reader.close();
+                writer.close();
+                _sock.close();
             } catch (IOException ex) {
 
             } catch (NoSuchAlgorithmException ex) {
             } catch (DocumentException ex) {
+            } finally {
+                if (_sock != null) {
+                    try {
+                        _sock.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
 
         }
@@ -73,11 +85,12 @@ public class FileTransportServer {
 
     void receiveChunks(InputStream reader, OutputStream writer, FileTransportConfig config, int startChunk)
             throws IOException, NoSuchAlgorithmException {
+        System.out.println("begin receive chunks");
         for (int i = startChunk; i < config.chunks.size(); i++) {
             boolean result = repeatReceiveChunkIfValidationFailed(reader, writer, config.fileName, config.chunks.get(i));
             //如果成功接收块，把块追加上主文件
             //如果出现任何不满足协议的帧，则断开和客户端的连接
-            if (!result) {
+            if (result) {
                 appendChunkToMainFile(config.fileName, i);
             } else {
                 reader.close();
@@ -120,13 +133,14 @@ public class FileTransportServer {
             File chunk = new File(getChunkFilePath(fileName, c.ordinalNum));
             DataOutputStream fileWriter = new DataOutputStream(new FileOutputStream(chunk, false));
             ChunkReceiveState state = receiveChunk(reader, writer, fileWriter, c);
+            System.out.println("chunk receive completed");
             if (state == ChunkReceiveState.Succeed) {
                 return true;
             } else if (state == ChunkReceiveState.IllegalFrame) {
                 return false;
-            } else if(state == ChunkReceiveState.ClientDisconnected){
+            } else if (state == ChunkReceiveState.ClientDisconnected) {
                 return false;
-            }else {
+            } else {
                 //如果验证不通过，则重新接收
                 continue;
             }
@@ -140,22 +154,54 @@ public class FileTransportServer {
         ClientDisconnected,
     }
 
+    int read(InputStream reader, byte[] bytes, int startPosition, int length) throws IOException {
+        int totalCount = 0;
+        while (true) {
+            int count = reader.read(bytes, startPosition + totalCount, length - totalCount);
+            totalCount += count;
+            if (totalCount == length || count <= 0) {
+                return totalCount;
+            }
+        }
+    }
+
+    int read(InputStream reader, byte[] bytes) throws IOException {
+        int headerCount = read(reader, bytes, 0, FrameUtil.HeaderLength);
+        if (headerCount <= 0) {
+            return 0;
+        }
+        if (bytes[0] == FrameUtil.FrameTypeChunkValidationRequest) {
+            return headerCount;
+        } else {
+            int bodyLength = FrameUtil.byteArrayToInt(bytes, 1);
+            int bodyCount = read(reader, bytes, FrameUtil.HeaderLength, bodyLength);
+            return headerCount + bodyCount;
+        }
+    }
+
+
     ChunkReceiveState receiveChunk(InputStream reader, OutputStream writer, OutputStream fileWriter, Chunk c)
             throws IOException, NoSuchAlgorithmException {
         byte[] bytes = new byte[FrameUtil.DataLength + FrameUtil.HeaderLength];
         MessageDigest md5 = MessageDigest.getInstance("md5");
+        System.out.println("begin receive chunk: " + c.ordinalNum);
         while (true) {
-            int count = reader.read(bytes, 0, bytes.length);
-            if(count <= 0){
+            int count = read(reader, bytes);
+            System.out.println(count);
+            if (count <= 0) {
                 return ChunkReceiveState.ClientDisconnected;
             }
             if (bytes[0] == FrameUtil.FrameTypeData) {
-                md5.update(bytes, FrameUtil.HeaderLength, count);
-                fileWriter.write(bytes, FrameUtil.HeaderLength, count);
+                md5.update(bytes, FrameUtil.HeaderLength, count - FrameUtil.HeaderLength);
+                fileWriter.write(bytes, FrameUtil.HeaderLength, count - FrameUtil.HeaderLength);
             } else if (bytes[0] == FrameUtil.FrameTypeChunkValidationRequest) {
+                //当收到块验证请求后，验证MD5值，根据验证结果回复验证帧
                 byte[] hash = md5.digest();
                 boolean needRetransmit = !DatatypeConverter.printHexBinary(hash).equalsIgnoreCase(c.md5Hash);
                 writer.write(FrameUtil.makeChunkValidationResponseFrame(needRetransmit));
+                fileWriter.flush();
+                fileWriter.close();
+                System.out.println("end receive chunk: " + c.ordinalNum);
                 return needRetransmit ? ChunkReceiveState.NeedRetransmit : ChunkReceiveState.Succeed;
             } else {
                 return ChunkReceiveState.IllegalFrame;
@@ -183,7 +229,7 @@ public class FileTransportServer {
             }
         });
 
-        if (chunks.length == 1) {
+        if (chunks.length <= 1) {
             return 0;
         }
 
@@ -227,7 +273,7 @@ public class FileTransportServer {
         if (!dir.exists()) {
             dir.mkdir();
         }
-        FileWriter writer = new FileWriter(receivePath + fileName);
+        FileWriter writer = new FileWriter(receivePath + fileName + ".xml");
         writer.append(config);
         writer.close();
     }

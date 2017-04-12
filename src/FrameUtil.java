@@ -19,10 +19,16 @@ import java.util.Iterator;
  * Created by Administrator on 2017/4/8.
  */
 public class FrameUtil {
+    //对于控制帧
     //帧头长度固定为16字节
     //帧头第一个字节表示帧的类型，1表示传输配置文件
     //紧跟的4个字节表示正文的长度
     //前面的5个字节所有的帧都必须遵从，后面的11字节不同类型帧自己决定如何填充
+
+    //对于数据帧
+    //帧头长度固定为16字节
+    //帧头第一个字节表示帧的类型
+    //帧的正文长度固定为1024，但帧头的第1-4个字节表示实际的正文长度
     public static final int HeaderLength = 16;
     public static final int HashLength = 16;
     public static final int DataLength = 1024;
@@ -41,9 +47,16 @@ public class FrameUtil {
         retransmitFrame[0] = 1;
     }
 
+    public static byte[] makeValidationRequestFrame() {
+        byte[] frame = new byte[HeaderLength];
+        frame[0] = FrameTypeChunkValidationRequest;
+        return frame;
+    }
+
     public static byte[] makeChunkValidationResponseFrame(boolean needRetransmit) {
         byte[] frame = new byte[HeaderLength];
-        frame[1 + 4] = needRetransmit ? (byte)1 : 0;;
+        frame[0] = FrameTypeChunkValidationResponse;
+        frame[1 + 4] = needRetransmit ? (byte) 1 : 0;
         return frame;
     }
 
@@ -51,8 +64,6 @@ public class FrameUtil {
         byte[] dataFrame = new byte[HeaderLength + DataLength];
         //数据帧的长度固定，因此在头部直接指定，这样便于接收
         dataFrame[0] = 4;
-        byte[] lengthBytes = ByteBuffer.allocate(4).putInt(FrameTypeData).array();
-        System.arraycopy(lengthBytes, 0, dataFrame, 1, lengthBytes.length);
         return dataFrame;
     }
 
@@ -160,7 +171,7 @@ public class FrameUtil {
                 config.chunks.add(new Chunk(i, calcFileMd5(filePath, startPosition, startPosition + ChunkSize - 1)));
             }
             if (config.fileSize - chunkCount * ChunkSize > 0) {
-                config.chunks.add(new Chunk((int) chunkCount + 1, calcFileMd5(filePath, chunkCount * ChunkSize, config.fileSize - 1)));
+                config.chunks.add(new Chunk((int) chunkCount, calcFileMd5(filePath, chunkCount * ChunkSize, config.fileSize - 1)));
             }
         }
 
